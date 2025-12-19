@@ -18,21 +18,38 @@ RESULT_DIR = desktop / "result_mp3_dir"
 class FLACtoMP3Converter:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("FLAC → MP3 320kbps Converter")
-        self.root.geometry("700x500")
-        self.root.configure(bg="#f0f0f0")
+        self.root.title("BEASTY FLAC → MP3 Converter")
+        self.root.geometry("750x550")
+        self.root.configure(bg="#212121")
+        self.root.resizable(True, True)
+
+        # Header label
+        header = tk.Label(
+            self.root, text="FLAC to MP3 320kbps Converter", 
+            font=("Arial", 14, "bold"), bg="#212121", fg="#ffffff"
+        )
+        header.pack(pady=(15, 5))
+
+        subheader = tk.Label(
+            self.root, text="Background monitoring active", 
+            font=("Arial", 10), bg="#212121", fg="#aaaaaa"
+        )
+        subheader.pack(pady=(0, 15))
 
         # Log area
         self.log_text = scrolledtext.ScrolledText(
-            self.root, state='disabled', font=("Consolas", 10), bg="black", fg="#00ff00"
+            self.root, state='disabled', font=("Consolas", 10), 
+            bg="#000000", fg="#00ff00", insertbackground="#00ff00"
         )
-        self.log_text.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        self.log_text.pack(padx=15, pady=10, fill=tk.BOTH, expand=True)
 
         # Stop button
         self.stop_button = tk.Button(
-            self.root, text="Stop and Exit", command=self.stop, bg="#ff4444", fg="white", font=("Arial", 10, "bold")
+            self.root, text="Stop and Exit", command=self.stop,
+            font=("Arial", 11, "bold"), bg="#d32f2f", fg="white",
+            activebackground="#b71c1c", width=20, height=2
         )
-        self.stop_button.pack(pady=8)
+        self.stop_button.pack(pady=15)
 
         self.observer = None
         self.running = True
@@ -48,9 +65,9 @@ class FLACtoMP3Converter:
     def create_folders(self):
         UPLOAD_DIR.mkdir(exist_ok=True)
         RESULT_DIR.mkdir(exist_ok=True)
-        self.log(f"Folders ready:")
-        self.log(f"  Upload: {UPLOAD_DIR}")
-        self.log(f"  Result: {RESULT_DIR}")
+        self.log("Folders initialized:")
+        self.log(f"  Upload folder:   {UPLOAD_DIR}")
+        self.log(f"  Output folder:   {RESULT_DIR}")
 
     def copy_metadata_and_cover(self, flac_path: Path, mp3_path: Path):
         flac_file = FLAC(str(flac_path))
@@ -85,26 +102,28 @@ class FLACtoMP3Converter:
         mp3_path = RESULT_DIR / relative.with_suffix(".mp3")
         mp3_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.log(f"Converting: {flac_path.name}")
+        self.log(f"Processing: {flac_path.name}")
 
         audio = AudioSegment.from_file(str(flac_path), format="flac")
         audio.export(str(mp3_path), format="mp3", bitrate="320k")
 
         self.copy_metadata_and_cover(flac_path, mp3_path)
-        self.log(f"Done: {mp3_path.name}")
+        self.log(f"Completed: {mp3_path.name}")
 
         flac_path.unlink()
-        self.log(f"Original FLAC deleted: {flac_path.name}")
+        self.log(f"Source FLAC removed: {flac_path.name}")
 
-    def process_existing_files(self):
+    def process_existing(self):
         flac_files = list(UPLOAD_DIR.rglob("*.flac"))
         if flac_files:
-            self.log(f"Found {len(flac_files)} existing FLAC files — converting...")
+            self.log(f"Found {len(flac_files)} existing FLAC files. Starting conversion...")
             for path in flac_files:
                 if self.running:
                     self.convert(path)
+                else:
+                    return
         else:
-            self.log("Upload folder is empty — waiting for new files...")
+            self.log("Upload folder is empty. Waiting for new files...")
 
     def start_monitoring(self):
         class Handler(FileSystemEventHandler):
@@ -113,7 +132,7 @@ class FLACtoMP3Converter:
                     return
                 path = Path(event.src_path)
                 if path.suffix.lower() == ".flac":
-                    time.sleep(1)  # Wait for file to finish copying
+                    time.sleep(1)
                     if path.exists() and self.running:
                         self.convert(path)
 
@@ -127,17 +146,26 @@ class FLACtoMP3Converter:
                         self.convert(path)
 
         self.create_folders()
-        self.process_existing_files()
+        self.process_existing()
 
         self.observer = Observer()
         self.observer.schedule(Handler(), str(UPLOAD_DIR), recursive=True)
         self.observer.start()
-        self.log("Monitoring started — drop FLAC files into 'upload_flac_dir'!")
+        self.log("Monitoring started. Ready to process FLAC files in upload_flac_dir.")
 
     def stop(self):
         self.running = False
         if self.observer:
             self.observer.stop()
             self.observer.join()
-        self.log("Converter stopped.")
-        self.root.quit
+        self.log("Converter stopped. Exiting application.")
+        self.root.quit()
+
+    def run(self):
+        Thread(target=self.start_monitoring, daemon=True).start()
+        self.root.protocol("WM_DELETE_WINDOW", self.stop)
+        self.root.mainloop()
+
+if __name__ == "__main__":
+    app = FLACtoMP3Converter()
+    app.run()
