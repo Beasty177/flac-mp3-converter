@@ -7,8 +7,6 @@ from tkinter import scrolledtext
 from pydub import AudioSegment
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3NoHeaderError, ID3, APIC, TIT2, TPE1, TALB, TCON, TRCK
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent, DirCreatedEvent
 
 # Desktop folders
 desktop = Path(os.path.expanduser("~/Desktop"))
@@ -19,47 +17,65 @@ class FLACtoMP3Converter:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("BEASTY FLAC → MP3 Converter")
-        self.root.geometry("750x550")
+        self.root.geometry("800x650")
         self.root.configure(bg="#212121")
         self.root.resizable(True, True)
 
         # Header
-        header = tk.Label(self.root, text="FLAC to MP3 320kbps Converter", font=("Arial", 14, "bold"), bg="#212121", fg="#ffffff")
-        header.pack(pady=(15, 5))
+        header = tk.Label(self.root, text="FLAC to MP3 320kbps Converter", font=("Arial", 16, "bold"), bg="#212121", fg="#ffffff")
+        header.pack(pady=(20, 10))
 
-        subheader = tk.Label(self.root, text="Background monitoring active", font=("Arial", 10), bg="#212121", fg="#aaaaaa")
-        subheader.pack(pady=(0, 15))
+        status = tk.Label(self.root, text="Auto-scan active", font=("Arial", 12), bg="#212121", fg="#00ff00")
+        status.pack(pady=(0, 20))
 
-        # Log area
+        # Log area — теперь копируется (Ctrl+C)
         self.log_text = scrolledtext.ScrolledText(
-            self.root, state='disabled', font=("Consolas", 10), bg="#000000", fg="#00ff00", insertbackground="#00ff00"
+            self.root, font=("Consolas", 10), bg="#000000", fg="#00ff00",
+            insertbackground="#00ff00", selectbackground="#333333", selectforeground="#ffffff",
+            state='disabled'  # Блокируем редактирование, но выделение работает
         )
-        self.log_text.pack(padx=15, pady=10, fill=tk.BOTH, expand=True)
+        self.log_text.pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
 
-        # Stop button
+        # Подсказка
+        hint = tk.Label(self.root, text="Tip: Highlight text → Ctrl+C to copy log", font=("Arial", 9), bg="#212121", fg="#888888")
+        hint.pack(pady=(0, 10))
+
+        # Buttons
+        button_frame = tk.Frame(self.root, bg="#212121")
+        button_frame.pack(pady=10)
+
+        self.manual_button = tk.Button(
+            button_frame, text="Scan and Convert Now", command=self.manual_scan,
+            font=("Arial", 12, "bold"), bg="#ff9800", fg="white", width=25, height=2
+        )
+        self.manual_button.pack(side=tk.LEFT, padx=20)
+
         self.stop_button = tk.Button(
-            self.root, text="Stop and Exit", command=self.stop,
-            font=("Arial", 11, "bold"), bg="#d32f2f", fg="white", width=20, height=2
+            button_frame, text="Stop and Exit", command=self.stop,
+            font=("Arial", 12, "bold"), bg="#d32f2f", fg="white", width=25, height=2
         )
-        self.stop_button.pack(pady=15)
+        self.stop_button.pack(side=tk.LEFT, padx=20)
 
-        self.observer = None
         self.running = True
+        self.processed_files = set()  # Отслеживаем уже обработанные файлы
 
     def log(self, message: str):
-        def _insert():
-            self.log_text.config(state='normal')
-            self.log_text.insert(tk.END, message + "\n")
-            self.log_text.see(tk.END)
-            self.log_text.config(state='disabled')
-        self.root.after(0, _insert)
+        timestamp = time.strftime("%H:%M:%S")
+        full_message = f"[{timestamp}] {message}\n"
+        
+        self.log_text.config(state='normal')
+        self.log_text.insert(tk.END, full_message)
+        self.log_text.see(tk.END)
+        self.log_text.config(state='disabled')
+        
+        print(full_message.strip())
 
     def create_folders(self):
         UPLOAD_DIR.mkdir(exist_ok=True)
         RESULT_DIR.mkdir(exist_ok=True)
-        self.log("Folders initialized:")
-        self.log(f"  Upload:  {UPLOAD_DIR}")
-        self.log(f"  Output:  {RESULT_DIR}")
+        self.log("Folders ready")
+        self.log(f"Upload: {UPLOAD_DIR}")
+        self.log(f"Output: {RESULT_DIR}")
 
     def copy_metadata_and_cover(self, flac_path: Path, mp3_path: Path):
         flac_file = FLAC(str(flac_path))
@@ -80,7 +96,7 @@ class FLACtoMP3Converter:
         mp3_file.save(v2_version=3)
 
     def convert(self, flac_path: Path):
-        if not flac_path.exists():
+        if not flac_path.exists() or str(flac_path) in self.processed_files:
             return
 
         try:
@@ -91,67 +107,59 @@ class FLACtoMP3Converter:
         mp3_path = RESULT_DIR / relative.with_suffix(".mp3")
         mp3_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.log(f"Processing: {flac_path}")
+        self.log(f"Converting: {flac_path.name}")
 
         try:
             audio = AudioSegment.from_file(str(flac_path), format="flac")
             audio.export(str(mp3_path), format="mp3", bitrate="320k")
             self.copy_metadata_and_cover(flac_path, mp3_path)
-            self.log(f"Completed: {mp3_path.name}")
-
+            self.log(f"Success: {mp3_path.name}")
             flac_path.unlink()
-            self.log(f"Source FLAC removed: {flac_path.name}")
+            self.log(f"Removed: {flac_path.name}")
+            self.processed_files.add(str(flac_path))
         except Exception as e:
-            self.log(f"Error processing {flac_path.name}: {str(e)}")
+            self.log(f"Error: {str(e)}")
 
-    def process_existing(self):
+    def manual_scan(self):
+        self.log("Manual scan started")
         flac_files = list(UPLOAD_DIR.rglob("*.flac"))
         if flac_files:
-            self.log(f"Found {len(flac_files)} existing FLAC files. Converting...")
-            for path in flac_files:
+            self.log(f"Found {len(flac_files)} files")
+            for p in flac_files:
                 if self.running:
-                    self.convert(path)
+                    self.convert(p)
         else:
-            self.log("Upload folder is empty. Waiting for new files...")
+            self.log("No files found")
+        self.log("Manual scan completed")
 
-    def start_monitoring(self):
-        class Handler(FileSystemEventHandler):
-            def on_any_event(self, event):
-                # Игнорируем директории и временные файлы
-                if event.is_directory:
-                    return
-
-                # Поддержка created и moved (включая типизированные события)
-                if isinstance(event, (FileCreatedEvent, FileMovedEvent)):
-                    path = Path(event.dest_path if isinstance(event, FileMovedEvent) else event.src_path)
+    def auto_scan(self):
+        while self.running:
+            time.sleep(10)
+            if self.running:
+                self.log("Auto-scan running (heartbeat)")
+                flac_files = list(UPLOAD_DIR.rglob("*.flac"))
+                new_files = [p for p in flac_files if str(p) not in self.processed_files]
+                if new_files:
+                    self.log(f"Auto-scan found {len(new_files)} new files. Converting...")
+                    for p in new_files:
+                        if self.running:
+                            self.convert(p)
                 else:
-                    # Для других событий (например, modified при копировании)
-                    path = Path(event.src_path)
+                    self.log("Auto-scan: no new files")
 
-                if path.suffix.lower() == ".flac" and path.is_relative_to(UPLOAD_DIR):
-                    self.log(f"New file detected: {path.name}")
-                    time.sleep(2)  # Увеличил задержку — Windows иногда пишет файл постепенно
-                    if path.exists() and self.running:
-                        self.convert(path)
-
+    def start(self):
         self.create_folders()
-        self.process_existing()
-
-        self.observer = Observer()
-        self.observer.schedule(Handler(), str(UPLOAD_DIR), recursive=True)
-        self.observer.start()
-        self.log("Real-time monitoring active. Drop FLAC files into upload_flac_dir.")
+        self.manual_scan()  # Начальный скан при запуске
+        Thread(target=self.auto_scan, daemon=True).start()
 
     def stop(self):
         self.running = False
-        if self.observer:
-            self.observer.stop()
-            self.observer.join()
-        self.log("Converter stopped. Closing application.")
+        self.log("Shutting down...")
+        self.log("Stopped.")
         self.root.quit()
 
     def run(self):
-        Thread(target=self.start_monitoring, daemon=True).start()
+        Thread(target=self.start, daemon=True).start()
         self.root.protocol("WM_DELETE_WINDOW", self.stop)
         self.root.mainloop()
 
