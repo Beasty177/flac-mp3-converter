@@ -1,4 +1,6 @@
-![BFMC Icon](favicon.ico =150x150)
+<p align="center">
+  <img src="favicon.ico" width="150" alt="BFMC Icon"/>
+</p>
 
 # FLAC → MP3 Converter
 
