@@ -1,3 +1,5 @@
+![BFMC Icon](favicon.ico =150x150)
+
 # FLAC → MP3 Converter
 
 A simple Windows background tool that automatically converts FLAC files to high-quality MP3 (320 kbps) while preserving:
@@ -62,7 +64,7 @@ or simply double-click `run.bat`
 
 ---
 
-# Конвертер BFMC — Beasty FLAC to MP3 Converter 
+# Конвертер FLAC в MP3  
 
 Простая программа для Windows, которая автоматически конвертирует FLAC-файлы в высококачественный MP3 (320 kbps) с полным сохранением:
 
