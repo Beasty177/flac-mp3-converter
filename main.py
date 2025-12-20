@@ -77,7 +77,11 @@ class FLACtoMP3Converter:
             self.root, text="Scan and Convert Now", command=self.manual_scan,
             font=("Arial", 10, "bold"), bg="#ff9800", fg="white", width=40, height=2
         )
-        self.manual_button.pack(pady=15)
+        self.manual_button.pack(pady=10)
+
+        # Подпись разработчика
+        footer = tk.Label(self.root, text="Developed by Beasty beats © 2025", font=("Arial", 8), bg="#212121", fg="#666666")
+        footer.pack(side=tk.BOTTOM, pady=10)
 
         self.running = True
         self.auto_scan_active = True
