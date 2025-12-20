@@ -1,4 +1,4 @@
-<p align="right">
+<p align="left">
   <img src="favicon.ico" width="150" alt="BFMC Icon"/>
 </p>
 
