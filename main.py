@@ -3,7 +3,8 @@ import time
 from pathlib import Path
 from threading import Thread
 import tkinter as tk
-from tkinter import scrolledtext
+import subprocess
+
 from pydub import AudioSegment
 from mutagen.flac import FLAC
 from mutagen.id3 import ID3NoHeaderError, ID3, APIC, TIT2, TPE1, TALB, TCON, TRCK
@@ -17,47 +18,70 @@ class FLACtoMP3Converter:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("BEASTY FLAC → MP3 Converter")
-        self.root.geometry("800x650")
+        self.root.geometry("400x650")
         self.root.configure(bg="#212121")
         self.root.resizable(True, True)
 
         # Header
-        header = tk.Label(self.root, text="FLAC to MP3 320kbps Converter", font=("Arial", 16, "bold"), bg="#212121", fg="#ffffff")
-        header.pack(pady=(20, 10))
+        header = tk.Label(self.root, text="FLAC → MP3 Converter", font=("Arial", 14, "bold"), bg="#212121", fg="#ffffff")
+        header.pack(pady=(15, 10))
 
-        status = tk.Label(self.root, text="Auto-scan active", font=("Arial", 12), bg="#212121", fg="#00ff00")
-        status.pack(pady=(0, 20))
+        # Log area — текст копируется
+        log_frame = tk.Frame(self.root)
+        log_frame.pack(padx=10, pady=(0, 10), fill=tk.BOTH, expand=True)
 
-        # Log area — теперь копируется (Ctrl+C)
-        self.log_text = scrolledtext.ScrolledText(
-            self.root, font=("Consolas", 10), bg="#000000", fg="#00ff00",
-            insertbackground="#00ff00", selectbackground="#333333", selectforeground="#ffffff",
-            state='disabled'  # Блокируем редактирование, но выделение работает
+        self.log_text = tk.Text(
+            log_frame, font=("Consolas", 9), bg="#000000", fg="#00ff00",
+            insertbackground="#00ff00", selectbackground="#004400", selectforeground="#ffffff",
+            wrap=tk.WORD
         )
-        self.log_text.pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Подсказка
-        hint = tk.Label(self.root, text="Tip: Highlight text → Ctrl+C to copy log", font=("Arial", 9), bg="#212121", fg="#888888")
-        hint.pack(pady=(0, 10))
+        scrollbar = tk.Scrollbar(log_frame, command=self.log_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_text.config(yscrollcommand=scrollbar.set)
 
-        # Buttons
-        button_frame = tk.Frame(self.root, bg="#212121")
-        button_frame.pack(pady=10)
 
+
+        # Controls frame
+        controls_frame = tk.Frame(self.root, bg="#212121")
+        controls_frame.pack(pady=10, fill=tk.X)
+
+        # Auto-scan toggle
+        self.auto_scan_var = tk.BooleanVar(value=True)
+        self.auto_scan_check = tk.Checkbutton(
+            controls_frame, text="Auto-scan", variable=self.auto_scan_var,
+            command=self.toggle_auto_scan, font=("Arial", 10), bg="#212121", fg="#ffffff",
+            selectcolor="#333333", activebackground="#212121"
+        )
+        self.auto_scan_check.pack(anchor=tk.W, padx=30)
+
+        # Open folders buttons — зелёные, по центру
+        open_frame = tk.Frame(self.root, bg="#212121")
+        open_frame.pack(pady=5)
+
+        self.open_upload_btn = tk.Button(
+            open_frame, text="Open Upload Folder", command=self.open_upload_folder,
+            font=("Arial", 9, "bold"), bg="#4caf50", fg="white", width=20
+        )
+        self.open_upload_btn.pack(side=tk.LEFT, padx=10)
+
+        self.open_result_btn = tk.Button(
+            open_frame, text="Open Result Folder", command=self.open_result_folder,
+            font=("Arial", 9, "bold"), bg="#4caf50", fg="white", width=20
+        )
+        self.open_result_btn.pack(side=tk.LEFT, padx=10)
+
+        # Manual scan button
         self.manual_button = tk.Button(
-            button_frame, text="Scan and Convert Now", command=self.manual_scan,
-            font=("Arial", 12, "bold"), bg="#ff9800", fg="white", width=25, height=2
+            self.root, text="Scan and Convert Now", command=self.manual_scan,
+            font=("Arial", 10, "bold"), bg="#ff9800", fg="white", width=40, height=2
         )
-        self.manual_button.pack(side=tk.LEFT, padx=20)
-
-        self.stop_button = tk.Button(
-            button_frame, text="Stop and Exit", command=self.stop,
-            font=("Arial", 12, "bold"), bg="#d32f2f", fg="white", width=25, height=2
-        )
-        self.stop_button.pack(side=tk.LEFT, padx=20)
+        self.manual_button.pack(pady=15)
 
         self.running = True
-        self.processed_files = set()  # Отслеживаем уже обработанные файлы
+        self.auto_scan_active = True
+        self.processed_files = set()
 
     def log(self, message: str):
         timestamp = time.strftime("%H:%M:%S")
@@ -66,14 +90,12 @@ class FLACtoMP3Converter:
         self.log_text.config(state='normal')
         self.log_text.insert(tk.END, full_message)
         self.log_text.see(tk.END)
-        self.log_text.config(state='disabled')
-        
-        print(full_message.strip())
+        self.log_text.config(state='normal')  # Оставляем normal для копирования
 
     def create_folders(self):
         UPLOAD_DIR.mkdir(exist_ok=True)
         RESULT_DIR.mkdir(exist_ok=True)
-        self.log("Folders ready")
+        self.log("Folders initialized")
         self.log(f"Upload: {UPLOAD_DIR}")
         self.log(f"Output: {RESULT_DIR}")
 
@@ -96,7 +118,8 @@ class FLACtoMP3Converter:
         mp3_file.save(v2_version=3)
 
     def convert(self, flac_path: Path):
-        if not flac_path.exists() or str(flac_path) in self.processed_files:
+        str_path = str(flac_path)
+        if not flac_path.exists() or str_path in self.processed_files:
             return
 
         try:
@@ -116,51 +139,62 @@ class FLACtoMP3Converter:
             self.log(f"Success: {mp3_path.name}")
             flac_path.unlink()
             self.log(f"Removed: {flac_path.name}")
-            self.processed_files.add(str(flac_path))
+            self.processed_files.add(str_path)
         except Exception as e:
             self.log(f"Error: {str(e)}")
 
     def manual_scan(self):
         self.log("Manual scan started")
-        flac_files = list(UPLOAD_DIR.rglob("*.flac"))
+        flac_files = [p for p in UPLOAD_DIR.rglob("*.flac") if str(p) not in self.processed_files]
         if flac_files:
-            self.log(f"Found {len(flac_files)} files")
+            self.log(f"Found {len(flac_files)} new files")
             for p in flac_files:
                 if self.running:
                     self.convert(p)
         else:
-            self.log("No files found")
+            self.log("No new files")
         self.log("Manual scan completed")
 
-    def auto_scan(self):
+    def toggle_auto_scan(self):
+        if self.auto_scan_var.get():
+            self.auto_scan_active = True
+            self.log("Auto-scan enabled")
+        else:
+            self.auto_scan_active = False
+            self.log("Auto-scan disabled — manual only")
+
+    def auto_scan_loop(self):
         while self.running:
             time.sleep(10)
-            if self.running:
-                self.log("Auto-scan running (heartbeat)")
-                flac_files = list(UPLOAD_DIR.rglob("*.flac"))
-                new_files = [p for p in flac_files if str(p) not in self.processed_files]
-                if new_files:
-                    self.log(f"Auto-scan found {len(new_files)} new files. Converting...")
-                    for p in new_files:
+            if self.running and self.auto_scan_active:
+                flac_files = [p for p in UPLOAD_DIR.rglob("*.flac") if str(p) not in self.processed_files]
+                if flac_files:
+                    self.log(f"Auto-scan: {len(flac_files)} new files")
+                    for p in flac_files:
                         if self.running:
                             self.convert(p)
-                else:
-                    self.log("Auto-scan: no new files")
+
+    def open_upload_folder(self):
+        subprocess.Popen(f'explorer "{UPLOAD_DIR}"')
+
+    def open_result_folder(self):
+        subprocess.Popen(f'explorer "{RESULT_DIR}"')
 
     def start(self):
         self.create_folders()
-        self.manual_scan()  # Начальный скан при запуске
-        Thread(target=self.auto_scan, daemon=True).start()
+        self.manual_scan()
+        self.log("Auto-scan enabled (default)")
+        Thread(target=self.auto_scan_loop, daemon=True).start()
 
     def stop(self):
         self.running = False
         self.log("Shutting down...")
-        self.log("Stopped.")
+        self.log("Application stopped.")
         self.root.quit()
 
     def run(self):
         Thread(target=self.start, daemon=True).start()
-        self.root.protocol("WM_DELETE_WINDOW", self.stop)
+        self.root.protocol("WM_DELETE_WINDOW", self.stop)  # Закрытие крестиком останавливает всё
         self.root.mainloop()
 
 if __name__ == "__main__":
